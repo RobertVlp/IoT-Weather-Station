@@ -8,14 +8,16 @@ from BME280 import BME280
 from machine import I2C, Pin, ADC
 from AzureSasToken import GenerateAzureSasToken
 
-# Wi-Fi Details
-WIFI_SSID = "TP-Link_FxF"
-WIFI_PASSWORD = "fxf2503#"
+# Load configuration
+with open("config.json") as f:
+    config = json.loads(f.read())
 
-# Azure IoT Hub Details
-HUB_NAME = "iot-weather-station.azure-devices.net"
-DEVICE_ID = "raspberrypipico"
-DEVICE_KEY = "m+nGJa3R/bPs+TVbHbeT3rfVlQARIlJrK9O8iAMhVsA="
+WIFI_SSID = config["WIFI_SSID"]
+WIFI_PASSWORD = config["WIFI_PASSWORD"]
+
+HUB_NAME = config["HUB_NAME"]
+DEVICE_ID = config["DEVICE_ID"]
+DEVICE_KEY = config["DEVICE_KEY"]
 
 i2c = I2C(id=0, scl=Pin(5), sda=Pin(4), freq=10000)
 bme280 = BME280(i2c=i2c)
@@ -38,6 +40,7 @@ def connect_wifi():
 
     print("Connected to Wi-Fi:", wlan.ifconfig())
 
+# Read Sensor Data
 def read_sensors():
     try:
         temperature = float(bme280.temperature.rstrip("C"))
