@@ -5,7 +5,8 @@ import network
 import urequests
 import ubinascii
 from BME280 import BME280
-from machine import I2C, Pin, ADC
+from i2c_lcd import I2cLcd
+from machine import I2C, Pin, ADC, SoftI2C
 from AzureSasToken import GenerateAzureSasToken
 
 # Load configuration
@@ -19,8 +20,16 @@ HUB_NAME = config["HUB_NAME"]
 DEVICE_ID = config["DEVICE_ID"]
 DEVICE_KEY = config["DEVICE_KEY"]
 
-i2c = I2C(id=0, scl=Pin(5), sda=Pin(4), freq=10000)
-bme280 = BME280(i2c=i2c)
+i2c_0 = I2C(id=0, scl=Pin(5), sda=Pin(4), freq=10000)
+bme280 = BME280(i2c=i2c_0)
+
+I2C_ADDR = 0x27
+totalRows = 2
+totalColumns = 16
+
+i2c_1 = SoftI2C(scl=Pin(3), sda=Pin(2), freq=10000)
+lcd = I2cLcd(i2c_1, I2C_ADDR, totalRows, totalColumns)
+lcd.clear()
 
 try:
     ntptime.settime()
@@ -53,7 +62,6 @@ def read_sensors():
         adc = ADC(Pin(26, Pin.PULL_UP))
         value = adc.read_u16()
         light = round(value / 65535 * 100, 2) * 100
-
     except OSError as e:
         print(f"Error reading light sensor: {e}")
 
@@ -61,8 +69,10 @@ def read_sensors():
         "temperature": temperature,
         "humidity": humidity,
         "pressure": pressure,
-        "light": light
+        "light": int(light)
     }
+
+    display_on_lcd(data)
 
     return json.dumps(data)
 
@@ -88,6 +98,12 @@ def send_data_to_azure():
         print("Failed to send data:", response.text)
 
     response.close()
+
+def display_on_lcd(data):
+    lcd.putstr(f"T:{data['temperature']}C H:{data['humidity']}%")
+    lcd.move_to(0, 1)
+    lcd.putstr(f"P:{data['pressure']} L:{data['light']}%")
+    lcd.move_to(0, 0)
 
 connect_wifi()
 
