@@ -3,11 +3,9 @@ import json
 import ntptime
 import network
 import urequests
-import ubinascii
 from BME280 import BME280
 from i2c_lcd import I2cLcd
 from machine import I2C, Pin, ADC, SoftI2C
-from AzureSasToken import GenerateAzureSasToken
 
 # Load configuration
 with open("config.json") as f:
@@ -15,10 +13,6 @@ with open("config.json") as f:
 
 WIFI_SSID = config["WIFI_SSID"]
 WIFI_PASSWORD = config["WIFI_PASSWORD"]
-
-HUB_NAME = config["HUB_NAME"]
-DEVICE_ID = config["DEVICE_ID"]
-DEVICE_KEY = config["DEVICE_KEY"]
 
 i2c_0 = I2C(id=0, scl=Pin(5), sda=Pin(4), freq=10000)
 bme280 = BME280(i2c=i2c_0)
@@ -31,11 +25,8 @@ i2c_1 = SoftI2C(scl=Pin(3), sda=Pin(2), freq=10000)
 lcd = I2cLcd(i2c_1, I2C_ADDR, totalRows, totalColumns)
 lcd.clear()
 
-try:
-    ntptime.settime()
-    print("Time synchronized successfully.")
-except Exception as e:
-    print("Failed to synchronize time:", e)
+WINDOW_SIZE = 10
+payload = [{} for _ in range(WINDOW_SIZE)]
 
 # Wi-Fi Connection
 def connect_wifi():
@@ -59,9 +50,9 @@ def read_sensors():
         print(f"Error reading sensor data: {e}")
 
     try:
-        adc = ADC(Pin(26, Pin.PULL_UP))
+        adc = ADC(Pin(26))
         value = adc.read_u16()
-        light = round(value / 65535 * 100, 2) * 100
+        light = value / 65535 * 100
     except OSError as e:
         print(f"Error reading light sensor: {e}")
 
@@ -69,44 +60,71 @@ def read_sensors():
         "temperature": temperature,
         "humidity": humidity,
         "pressure": pressure,
-        "light": int(light)
+        "light": light
+    }
+
+    return data
+
+# Send Data to Flask server
+def send_data_to_server():
+    url = "http://192.168.0.142:5000/weather"
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    temp = sum([data["temperature"] for data in payload]) / WINDOW_SIZE
+    humidity = sum([data["humidity"] for data in payload]) / WINDOW_SIZE
+    pressure = sum([data["pressure"] for data in payload]) / WINDOW_SIZE
+    light = sum([data["light"] for data in payload]) / WINDOW_SIZE
+
+    data = {
+        "temperature": temp,
+        "humidity": humidity,
+        "pressure": pressure,
+        "light": light
     }
 
     display_on_lcd(data)
 
-    return json.dumps(data)
+    print("Sending data to Flask server...")
 
-# Send Data to Azure IoT Hub
-def send_data_to_azure():
-    sas_token = GenerateAzureSasToken(f"{HUB_NAME}/devices/{DEVICE_ID}", DEVICE_KEY, int(time.time()) + 3600)
+    response = urequests.post(url, headers=headers, data=json.dumps(data))
 
-    url = f"https://{HUB_NAME}/devices/{DEVICE_ID}/messages/events?api-version=2018-06-30"
-
-    headers = {
-        "Authorization": sas_token,
-        "Content-Type": "application/json"
-    }
-
-    payload = read_sensors()
-    print("Sending data to Azure IoT Hub...")
-
-    response = urequests.post(url, headers=headers, data=payload)
-
-    if response.status_code == 204:
-        print("Data sent successfully!: ", payload)
+    if response.status_code == 200:
+        print("Data sent successfully!: ", data)
     else:
         print("Failed to send data:", response.text)
 
     response.close()
 
 def display_on_lcd(data):
-    lcd.putstr(f"T:{data['temperature']}C H:{data['humidity']}%")
+    temp = round(data["temperature"], 2)
+    humidity = int(data["humidity"])
+    pressure = round(data["pressure"], 2)
+    light = int(data["light"])
+
+    lcd.clear()
+    lcd.putstr(f"T:{temp}C H:{humidity}%")
     lcd.move_to(0, 1)
-    lcd.putstr(f"P:{data['pressure']} L:{data['light']}%")
+    lcd.putstr(f"P:{pressure} L:{light}%")
     lcd.move_to(0, 0)
 
 connect_wifi()
 
+try:
+    ntptime.settime()
+    print("Time synchronized successfully.")
+except Exception as e:
+    print("Failed to synchronize time:", e)
+
 while True:
-    send_data_to_azure()
-    time.sleep(30)  # Send data every 30 seconds
+    print("Reading sensor data...")
+    for i in range(WINDOW_SIZE):
+        data = read_sensors()
+        payload[i] = data
+
+        time.sleep(1)
+
+    send_data_to_server()
+    time.sleep(10)
