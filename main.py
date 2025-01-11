@@ -1,6 +1,5 @@
 import time
 import json
-import ntptime
 import network
 import urequests
 from BME280 import BME280
@@ -13,6 +12,7 @@ with open("config.json") as f:
 
 WIFI_SSID = config["WIFI_SSID"]
 WIFI_PASSWORD = config["WIFI_PASSWORD"]
+SERVER_URL = config["SERVER_URL"]   
 
 i2c_0 = I2C(id=0, scl=Pin(5), sda=Pin(4), freq=10000)
 bme280 = BME280(i2c=i2c_0)
@@ -67,8 +67,6 @@ def read_sensors():
 
 # Send Data to Flask server
 def send_data_to_server():
-    url = "http://192.168.0.142:5000/weather"
-
     headers = {
         "Content-Type": "application/json"
     }
@@ -89,7 +87,7 @@ def send_data_to_server():
 
     print("Sending data to Flask server...")
 
-    response = urequests.post(url, headers=headers, data=json.dumps(data))
+    response = urequests.post(SERVER_URL, headers=headers, data=json.dumps(data))
 
     if response.status_code == 200:
         print("Data sent successfully!: ", data)
@@ -111,12 +109,6 @@ def display_on_lcd(data):
     lcd.move_to(0, 0)
 
 connect_wifi()
-
-try:
-    ntptime.settime()
-    print("Time synchronized successfully.")
-except Exception as e:
-    print("Failed to synchronize time:", e)
 
 while True:
     print("Reading sensor data...")
