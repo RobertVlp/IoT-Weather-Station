@@ -1,5 +1,4 @@
 config.json
-/model/config.json
 /server/config.json
 /server/__pycache__/
 /server/.venv/
